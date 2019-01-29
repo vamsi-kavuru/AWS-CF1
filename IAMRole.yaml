@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources: 
+  VamsiEC2toS3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: 
+                - ec2.amazonaws.com
+            Action:   
+                - sts:AssumeRole
+            
+      RoleName: VamsiEC2toS3Role  
+      Policies:
+        - 
+          PolicyName: "VamsiEC2toS3Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource: 
+                  - arn:aws:s3:::vamsi-s3-east/*
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "s3:ListBucket"
+                Resource: 
+                  - arn:aws:s3:::vamsi-s3-east    
+  VamsiEC2toS3InstProf:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - Ref: VamsiEC2toS3Role
+
+      
+Outputs:
+  VamsiIAMStackOut:
+    Description: This is the output of my IAM Stack.
+    Value: 
+      #!GetAtt VamsiEC2toS3InstProf.Arn
+      Ref: VamsiEC2toS3InstProf
+    Export:
+      Name: VamsiIAMStackOut

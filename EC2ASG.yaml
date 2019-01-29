@@ -1,0 +1,162 @@
+---
+Parameters:
+  VamsiEc2InstanceType:
+    Description: This gives the options available for Bastion Instance;
+    Type: String
+    Default: t2.micro
+  VamsiEc2Key:
+    Description: This is the Ec2-Key that is needed
+    Type: String
+    Default: Vamsi-Ohio-EC2-Key
+  VamsiEc2Image:
+    Description: This is the image for Bastion Instance.
+    Type: String
+    Default: ami-04328208f4f0cf1fe
+
+
+Resources:
+
+  vamsiwebserversg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: vamsiwebserversg
+      GroupDescription: This is the SG for webservers which would be in a PVT subnet.
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        SourceSecurityGroupId:
+          !ImportValue VamsibastionSGOp
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        SourceSecurityGroupId:
+          !GetAtt vamsiELBsg.GroupId
+      VpcId:
+        !ImportValue VamsiVPCOp
+      Tags:
+        - Key: Name
+          Value: vamsiwebserversg  
+  vamsiELBsg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: vamsiELBsg
+      GroupDescription: This is the SG for ELB which is inside a Public subnet.
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      VpcId:
+        !ImportValue VamsiVPCOp
+      Tags:
+        - Key: Name
+          Value: vamsiELBsg
+
+  VamsiASGLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: VamsiASGLaunchConfig
+      AssociatePublicIpAddress: "false"
+      IamInstanceProfile: 
+        !ImportValue VamsiIAMStackOut
+      ImageId: 
+        Ref: VamsiEc2Image
+      EbsOptimized: "false"
+      InstanceMonitoring: "false"
+      InstanceType: 
+        Ref: VamsiEc2InstanceType
+      #KernelId: 
+      KeyName:
+        Ref: VamsiEc2Key
+      SecurityGroups:
+        - Ref: vamsiwebserversg
+      UserData:
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash -ex 
+            yum update -y
+            yum install httpd -y
+            service httpd start
+            chkconfig httpd on
+            echo "This document is to perform the health test." >> /healthcheck.html
+  
+  VamsiCFASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: VamsiCFASG
+      Cooldown: 180
+      HealthCheckGracePeriod: 240
+      HealthCheckType: ELB
+      TargetGroupARNs:
+        - Ref: VamsiWSTargetGroup
+      #NotificationConfigurations: 
+      VPCZoneIdentifier: 
+        - !ImportValue Vamsipvtsn1Op
+        - !ImportValue Vamsipvtsn2Op
+        - !ImportValue Vamsipvtsn3Op
+      LaunchConfigurationName: 
+        Ref: VamsiASGLaunchConfig
+      MaxSize: 4
+      MinSize: 3
+      Tags:
+        - Key: Name
+          Value: VamsiASG
+          PropagateAtLaunch: "true"
+  
+  VamsiWSTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/healthcheck.html"
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 20
+      HealthyThresholdCount: 4
+      Matcher: 
+        HttpCode: '200'
+      Name: VamsiWSTargetGroup
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: VamsiWSTargetGroup
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 150
+        - Key: slow_start.duration_seconds
+          Value: 150
+      #Targets:
+        #- TargetDescription
+      #TargetType: String
+      UnhealthyThresholdCount: 3
+      VpcId: 
+        !ImportValue VamsiVPCOp
+
+  vamsicfELB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Name: vamsicfELB
+      SecurityGroups:
+        - !GetAtt vamsiELBsg.GroupId
+      Subnets:
+        - !ImportValue Vamsipubsn1Op
+        - !ImportValue Vamsipubsn2Op
+        - !ImportValue Vamsipubsn3Op
+      Tags:
+        - Key: Name
+          Value: vamsicfELB
+  
+  VamsiELBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: VamsiWSTargetGroup
+      LoadBalancerArn:
+        Ref: vamsicfELB
+      Port: '80'
+      Protocol: HTTP
+  
