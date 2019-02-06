@@ -11,11 +11,11 @@ def game():
     global y
     move = str(input('Make your move! Type in either "Left", "Right", "Up", "Down" or type "Exit" to exit the game:')).lower()
     if move == ('left'):
-        x = x-2
+        x = x-3
         print ('your x position is', x, '.' 'your y position is', y, '.')
         game()
     elif move == ('up'):      
-        y = y+2
+        y = y+3
         print ('your x position is', x, '.' 'your y position is', y, '.')
         game()
     elif move == ('right'):
